@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Cuando el botón está activado, usa este color rojo -->
+    <item android:state_enabled="true" android:color="#FF3131" />
+
+    <!-- Cuando el botón está desactivado, usa este color gris -->
+    <item android:state_enabled="false" android:color="#808080" />
+</selector>

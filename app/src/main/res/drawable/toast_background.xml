@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- Fondo semi-transparente -->
+    <solid android:color="#D9012854"/>
+
+    <!-- Bordes redondeados idénticos al info panel -->
+    <corners android:radius="10dp"/>
+
+    <!-- Opcional: borde fino, consistente con estilo de MiniMap info panel -->
+    <stroke android:width="1dp" android:color="#AAFFFFFF"/>
+
+    <!-- Padding interno (opcional, pero ya se maneja en TextView de toast) -->
+    <padding
+        android:left="12dp"
+        android:top="8dp"
+        android:right="12dp"
+        android:bottom="8dp"/>
+
+</shape>
+
+

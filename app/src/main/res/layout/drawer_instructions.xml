@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Question Drawer Layout
+    Displays service indicators and a real-time list of resolved targets.
+    Optimized using TextView compound drawables with AppCompat for backward compatibility.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawer_instructions"
+    android:layout_width="300dp"
+    android:layout_height="match_parent"
+    android:layout_gravity="start"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#012854">
+
+    <!-- Title above indicators -->
+    <TextView
+        android:id="@+id/services_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/available_services"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <!-- GPS Indicator using compound drawable with AppCompat -->
+    <TextView
+        android:id="@+id/gps_indicator_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/gps_label"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        app:drawableStartCompat="@drawable/circle_red"
+        android:drawablePadding="12dp"
+        android:gravity="center_vertical"
+        android:padding="8dp" />
+
+    <!-- Network Indicator using compound drawable with AppCompat -->
+    <TextView
+        android:id="@+id/network_indicator_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/network_label"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        app:drawableStartCompat="@drawable/circle_red"
+        android:drawablePadding="12dp"
+        android:gravity="center_vertical"
+        android:padding="8dp" />
+
+    <!-- Targets Indicator using compound drawable with AppCompat -->
+    <TextView
+        android:id="@+id/targets_indicator_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/targets_label"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        app:drawableStartCompat="@drawable/circle_red"
+        android:drawablePadding="12dp"
+        android:gravity="center_vertical"
+        android:padding="8dp" />
+
+    <!-- Title for real-time targets list -->
+    <TextView
+        android:id="@+id/targets_list_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/resolved_targets"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
+        android:textStyle="bold" />
+
+    <!-- Scrollable container for real-time targets -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingTop="8dp">
+
+        <LinearLayout
+            android:id="@+id/targets_list_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="4dp" />
+
+    </ScrollView>
+
+</LinearLayout>

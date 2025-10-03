@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.drawerlayout.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/background_gradient"
+    tools:context=".frame.AppCore">
+
+    <!-- Main content container -->
+    <FrameLayout
+        android:id="@+id/content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Top banner with logos -->
+        <LinearLayout
+            android:id="@+id/banner"
+            android:layout_marginTop="35dp"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:orientation="horizontal"
+            android:padding="8dp"
+            android:background="#FFFFFF"
+            android:elevation="4dp"
+            android:gravity="center_vertical">
+
+            <!-- Left logo: Uninorte -->
+            <ImageView
+                android:id="@+id/logo_left"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:src="@drawable/logo_uninorte"
+                android:contentDescription="Logo Uninorte" />
+
+            <!-- Center logo: GSMS -->
+            <ImageView
+                android:id="@+id/logo_center"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:src="@drawable/logo_gsms2"
+                android:contentDescription="Logo GSMS" />
+
+            <!-- Right logo: Puerto de Barranquilla -->
+            <ImageView
+                android:id="@+id/logo_right"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:src="@drawable/logo_puerto2"
+                android:contentDescription="Logo Puerto de Barranquilla" />
+        </LinearLayout>
+
+        <!-- Decorative circles (left and right) -->
+        <View
+            android:layout_width="150dp"
+            android:layout_height="150dp"
+            android:background="@drawable/circle_decoration"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginBottom="60dp"
+            android:layout_marginStart="35dp" />
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="150dp"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="35dp"
+            android:layout_marginBottom="60dp"
+            android:background="@drawable/circle_decoration" />
+
+        <!-- Map CardView container with rounded corners and border -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="150dp"
+            android:layout_marginBottom="300dp"
+            android:layout_marginStart="60dp"
+            android:layout_marginEnd="60dp"
+            app:cardElevation="8dp"
+            app:cardCornerRadius="40dp"
+            app:strokeColor="#3E2723"
+            app:strokeWidth="14dp">
+
+            <!-- FrameLayout for MapView -->
+            <FrameLayout
+                android:id="@+id/map_container"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <org.osmdroid.views.MapView
+                    android:id="@+id/map"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+            </FrameLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Optional info panel (hidden by default) -->
+        <include
+            android:id="@+id/last_info_include"
+            layout="@layout/last_info_panel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginStart="60dp"
+            android:layout_marginEnd="60dp"
+            android:visibility="gone"
+            tools:visibility="visible"/>
+
+        <!-- Bottom button section -->
+        <LinearLayout
+            android:id="@+id/button_section"
+            android:layout_marginBottom="60dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_gravity="bottom"
+            android:padding="16dp">
+
+            <!-- Only send button remains after removing receiver input -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/send_button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:text="SEND MESSAGE"
+                android:textColor="@android:color/white"
+                android:fontFamily="@font/inter_variable"
+                android:textFontWeight="800"
+                app:icon="@drawable/ic_send_plane2"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:cornerRadius="38dp"
+                android:layout_marginBottom="30dp"
+                android:layout_marginStart="45dp"
+                android:layout_marginEnd="45dp"/>
+        </LinearLayout>
+
+        <!-- Floating action buttons -->
+        <ImageButton
+            android:id="@+id/btn_question"
+            android:layout_width="42dp"
+            android:layout_height="41dp"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Help Button"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_question_2" />
+
+        <ImageButton
+            android:id="@+id/btn_more"
+            android:layout_width="37dp"
+            android:layout_height="34dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="More Options Button"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_more_vert2" />
+    </FrameLayout>
+
+    <!-- Drawer layouts -->
+    <include layout="@layout/drawer_instructions"/>
+    <include layout="@layout/drawer_about"/>
+
+</androidx.drawerlayout.widget.DrawerLayout>

@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">GSMS</string>
+    <string name="btn_send_sms">Enviar SMS</string>
+    <!-- res/values/strings.xml -->
+    <string name="port_label">Port: %1$d</string>
+    <string name="gps_label">GPS</string>
+    <string name="network_label">Network</string>
+    <string name="targets_label">Targets</string>
+    <string name="available_services">Available Services</string>
+    <string name="resolved_targets">Resolved Targets</string>
+</resources>
