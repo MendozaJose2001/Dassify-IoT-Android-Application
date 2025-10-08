@@ -13,7 +13,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.electro.gsms.R;
-import com.electro.gsms.services.PermissionManager;
+import com.electro.gsms.helpers.PermissionManager;
 
 /**
  * MainActivity: Splash screen and entry point of the app.
