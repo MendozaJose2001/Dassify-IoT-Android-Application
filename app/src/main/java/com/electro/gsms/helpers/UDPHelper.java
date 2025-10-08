@@ -288,6 +288,7 @@ public class UDPHelper implements
     /**
      * Constructs JSON payload from Location data including device identification.
      * Formats location data with device ID for unique identification at receiver.
+     * Timestamp is converted to Unix epoch seconds for ISO 8601 compatibility.
      *
      * @param location The location data to include in JSON payload
      * @return UTF-8 encoded byte array of JSON payload, or null if construction fails
@@ -296,6 +297,7 @@ public class UDPHelper implements
         try {
             // Retrieve device ID from identifier manager, fallback to "unknown"
             String deviceId = identifierManager != null ? identifierManager.getDeviceId() : "unknown";
+            long timestampSeconds = location.getTime() / 1000;
 
             // Construct JSON with device_id as primary identifier
             String jsonStr = String.format(java.util.Locale.US,
@@ -310,7 +312,7 @@ public class UDPHelper implements
                     location.getLongitude(),
                     location.getAltitude(),
                     location.getAccuracy(),
-                    location.getTime());
+                    timestampSeconds);
 
             return truncateMessage(jsonStr).getBytes(StandardCharsets.UTF_8);
 
