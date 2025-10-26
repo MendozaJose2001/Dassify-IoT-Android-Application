@@ -9,10 +9,12 @@ import android.view.animation.AnimationUtils;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.core.view.GravityCompat;
 
 import com.electro.gsms.R;
+import com.electro.gsms.services.AccelerometerManager;
 import com.electro.gsms.services.GPSManager;
 import com.electro.gsms.services.NetworkManager;
 import com.electro.gsms.services.TargetResolverManager;
@@ -23,63 +25,129 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+
 /**
- * QuestionDrawerController
- * Updated to remove any direct dependency on resolver.getResolvedTargetsMap().
- * Now it caches the latest targets received through the TargetsListener and
- * uses that cache when the drawer is opened.
- * Ensures full listener-based model (consistent with TargetResolverHelper changes).
+ * QuestionDrawer - System status and testing controls drawer.
+ *
+ * <p><b>Features:</b></p>
+ * <ul>
+ *   <li>Real-time status indicators (GPS, Network, Targets, Accelerometer)</li>
+ *   <li>Dynamic targets list display</li>
+ *   <li>Accelerometer testing toggle (enable/disable sensor)</li>
+ *   <li>Operating mode display (ACTIVE/STANDBY)</li>
+ * </ul>
  */
 public class QuestionDrawer implements GPSManager.LocationListenerExternal {
+
+    // ═══════════════════════════════════════════════════════
+    // UI Components
+    // ═══════════════════════════════════════════════════════
 
     private final TextView gpsIndicatorText;
     private final TextView networkIndicatorText;
     private final TextView targetsIndicatorText;
+    private final TextView accelIndicatorText;
+    private final TextView accelModeText;
 
     private final Animation blinkAnimation;
+
+    // ═══════════════════════════════════════════════════════
+    // State Tracking
+    // ═══════════════════════════════════════════════════════
 
     private boolean lastGpsState = false;
     private boolean lastNetworkState = false;
     private boolean lastTargetsState = false;
+    private boolean lastAccelState = false;
+
+    // ═══════════════════════════════════════════════════════
+    // Service Managers
+    // ═══════════════════════════════════════════════════════
 
     private final GPSManager gpsManager;
     private final NetworkManager networkManager;
     private final TargetResolverManager resolver;
+    private final AccelerometerManager accelManager;
 
     private final LinearLayout targetsListContainer;
 
+    // ═══════════════════════════════════════════════════════
+    // Listeners
+    // ═══════════════════════════════════════════════════════
+
     private final NetworkManager.NetworkListener networkListener;
     private final TargetResolverManager.TargetsListener targetsListener;
+    @SuppressWarnings("FieldMayBeFinal")
+    private AccelerometerManager.AccelStatisticsListener accelListener;  // Not final - may be null  @Ignore
     private final DrawerLayout drawerLayout;
     private final DrawerLayout.SimpleDrawerListener drawerListener;
 
-    // Cache of the latest targets delivered by TargetResolverHelper
+    // Cache of the latest targets delivered by TargetResolverManager
     private volatile Map<InetAddress, Set<Integer>> lastKnownTargets = Collections.emptyMap();
 
+    // ═══════════════════════════════════════════════════════
+    // Callback for accelerometer toggle
+    // ═══════════════════════════════════════════════════════
+
+    /**
+     * Callback interface for accelerometer state changes.
+     * Allows external components (like GPSSender) to react to mode changes.
+     */
+    public interface AccelerometerToggleListener {
+        void onAccelerometerToggled(boolean enabled);
+    }
+
+    private AccelerometerToggleListener accelToggleListener;
+
+    /**
+     * Constructs QuestionDrawer with system status monitoring and testing controls.
+     *
+     * @param drawerView Root view of the drawer layout
+     * @param context Android context
+     * @param drawerLayout Drawer layout container
+     * @param gpsManager GPS manager
+     * @param networkManager Network manager
+     * @param resolver Target resolver manager
+     * @param accelManager Accelerometer manager (can be null)
+     */
     public QuestionDrawer(View drawerView,
                           Context context,
                           DrawerLayout drawerLayout,
                           GPSManager gpsManager,
                           NetworkManager networkManager,
-                          TargetResolverManager resolver) {
+                          TargetResolverManager resolver,
+                          AccelerometerManager accelManager) {
 
         this.drawerLayout = drawerLayout;
+        this.gpsManager = gpsManager;
+        this.networkManager = networkManager;
+        this.resolver = resolver;
+        this.accelManager = accelManager;
+
+        // ═══════════════════════════════════════════════════════
+        // Initialize UI components
+        // ═══════════════════════════════════════════════════════
 
         gpsIndicatorText = drawerView.findViewById(R.id.gps_indicator_text);
         networkIndicatorText = drawerView.findViewById(R.id.network_indicator_text);
         targetsIndicatorText = drawerView.findViewById(R.id.targets_indicator_text);
+        accelIndicatorText = drawerView.findViewById(R.id.accel_indicator_text);
+        accelModeText = drawerView.findViewById(R.id.accel_mode_text);
+        SwitchCompat accelSwitch = drawerView.findViewById(R.id.switch_accelerometer);
 
         blinkAnimation = AnimationUtils.loadAnimation(context, R.anim.blink);
-
         targetsListContainer = drawerView.findViewById(R.id.targets_list_container);
 
-        this.gpsManager = gpsManager;
-        this.networkManager = networkManager;
-        this.resolver = resolver;
+        // ═══════════════════════════════════════════════════════
+        // Setup GPS listener
+        // ═══════════════════════════════════════════════════════
 
         this.gpsManager.addLocationListener(this);
 
-        // Network listener updates network indicator
+        // ═══════════════════════════════════════════════════════
+        // Setup Network listener
+        // ═══════════════════════════════════════════════════════
+
         networkListener = new NetworkManager.NetworkListener() {
             @Override
             public void onNetworkAvailable(Network network) {
@@ -93,11 +161,13 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         };
         this.networkManager.addListener(networkListener);
 
-        // Targets listener updates both indicator and list
+        // ═══════════════════════════════════════════════════════
+        // Setup Targets listener
+        // ═══════════════════════════════════════════════════════
+
         targetsListener = new TargetResolverManager.TargetsListener() {
             @Override
             public void onTargetsUpdated(Map<InetAddress, Set<Integer>> targets) {
-                // Cache the latest targets for later use (e.g. drawer opened)
                 lastKnownTargets = new HashMap<>(targets);
                 targetsListContainer.post(() -> updateTargetsList(targets));
                 updateTargetsIndicator(!targets.isEmpty());
@@ -110,7 +180,54 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         };
         this.resolver.addTargetsListener(targetsListener);
 
-        // Drawer listener now uses lastKnownTargets instead of direct resolver call
+        // ═══════════════════════════════════════════════════════
+        // Setup Accelerometer listener
+        // ═══════════════════════════════════════════════════════
+
+        if (accelManager != null) {
+            accelListener = new AccelerometerManager.AccelStatisticsListener() {
+                @Override
+                public void onStatisticsComputed(AccelerometerManager.AccelStatistics statistics) {
+                    // Update mode display when window completes
+                    accelModeText.post(() ->
+                            accelModeText.setText(R.string.mode_standby)
+                    );
+                }
+
+                @Override
+                public void onAvailabilityChanged(boolean available) {
+                    accelIndicatorText.post(() -> {
+                        updateAccelIndicator(available);
+                        updateModeDisplay(available);
+                    });
+                }
+            };
+            accelManager.addListener(accelListener);
+
+            // Setup switch listener
+            accelSwitch.setOnCheckedChangeListener((buttonView, isChecked) ->
+                    toggleAccelerometer(isChecked)
+            );
+
+            // Set initial state
+            boolean initiallyAvailable = accelManager.isSensorAvailable() &&
+                    accelManager.isRunning();
+            updateAccelIndicator(initiallyAvailable);
+            updateModeDisplay(initiallyAvailable);
+            accelSwitch.setChecked(initiallyAvailable);
+
+        } else {
+            // No accelerometer manager - disable controls
+            accelListener = null;
+            if (accelIndicatorText != null) accelIndicatorText.setVisibility(View.GONE);
+            if (accelModeText != null) accelModeText.setVisibility(View.GONE);
+            if (accelSwitch != null) accelSwitch.setVisibility(View.GONE);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Setup Drawer listener
+        // ═══════════════════════════════════════════════════════
+
         drawerListener = new DrawerLayout.SimpleDrawerListener() {
             @Override
             public void onDrawerOpened(View dv) {
@@ -124,6 +241,10 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         this.drawerLayout.addDrawerListener(drawerListener);
     }
 
+    // ═══════════════════════════════════════════════════════
+    // GPS Listener Implementation
+    // ═══════════════════════════════════════════════════════
+
     @Override
     public void onNewLocation(Location location) { /* Not used here */ }
 
@@ -132,7 +253,64 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         gpsIndicatorText.post(() -> updateGpsIndicator(available));
     }
 
-    // --- Indicator helpers ---
+    // ═══════════════════════════════════════════════════════
+    // Accelerometer Toggle Control
+    // ═══════════════════════════════════════════════════════
+
+    /**
+     * Sets a listener to be notified when accelerometer is toggled.
+     * This is intended for future extensibility (e.g., notifying GPSSender).
+     *
+     * @param listener Callback for toggle events
+     */
+    @SuppressWarnings("unused")
+    public void setAccelerometerToggleListener(AccelerometerToggleListener listener) {
+        this.accelToggleListener = listener;
+    }
+
+    /**
+     * Toggles accelerometer on/off for testing.
+     *
+     * @param enable true to start accelerometer, false to stop
+     */
+    private void toggleAccelerometer(boolean enable) {
+        if (accelManager == null) return;
+
+        if (enable) {
+            accelManager.start();
+            updateModeDisplay(true);
+        } else {
+            accelManager.stop();
+            updateModeDisplay(false);
+        }
+
+        // Notify external listeners (e.g., GPSSender for mode switching)
+        if (accelToggleListener != null) {
+            accelToggleListener.onAccelerometerToggled(enable);
+        }
+    }
+
+    /**
+     * Updates the mode display text based on accelerometer state.
+     *
+     * @param accelAvailable true if accelerometer is running
+     */
+    private void updateModeDisplay(boolean accelAvailable) {
+        if (accelModeText == null) return;
+
+        if (accelAvailable) {
+            accelModeText.setText(R.string.mode_standby);
+            accelModeText.setTextColor(0xFF00BF63);  // Green
+        } else {
+            accelModeText.setText(R.string.mode_active);
+            accelModeText.setTextColor(0xFFFFAA00);  // Orange
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Status Indicator Updates
+    // ═══════════════════════════════════════════════════════
+
     private void updateGpsIndicator(boolean state) {
         if (state != lastGpsState) {
             gpsIndicatorText.clearAnimation();
@@ -181,7 +359,33 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         lastTargetsState = state;
     }
 
-    // --- Targets UI list ---
+    /**
+     * Updates accelerometer status indicator.
+     *
+     * @param state true if accelerometer is available and running
+     */
+    private void updateAccelIndicator(boolean state) {
+        if (accelIndicatorText == null) return;
+
+        if (state != lastAccelState) {
+            accelIndicatorText.clearAnimation();
+            accelIndicatorText.setCompoundDrawablesWithIntrinsicBounds(R.drawable.circle_yellow, 0, 0, 0);
+            accelIndicatorText.startAnimation(blinkAnimation);
+        }
+
+        accelIndicatorText.postDelayed(() -> {
+            accelIndicatorText.clearAnimation();
+            accelIndicatorText.setCompoundDrawablesWithIntrinsicBounds(
+                    state ? R.drawable.circle_green : R.drawable.circle_red, 0, 0, 0);
+        }, blinkAnimation.getDuration() * (blinkAnimation.getRepeatCount() + 1));
+
+        lastAccelState = state;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Targets List UI
+    // ═══════════════════════════════════════════════════════
+
     private void updateTargetsList(Map<InetAddress, Set<Integer>> targets) {
         Context context = targetsListContainer.getContext();
         targetsListContainer.removeAllViews();
@@ -212,18 +416,31 @@ public class QuestionDrawer implements GPSManager.LocationListenerExternal {
         }
     }
 
+    // ═══════════════════════════════════════════════════════
+    // Public API
+    // ═══════════════════════════════════════════════════════
+
     public void openDrawer(DrawerLayout drawerLayout) {
         drawerLayout.openDrawer(GravityCompat.START);
     }
 
+    /**
+     * Cleanup all listeners and resources.
+     */
     public void dispose() {
         try { gpsManager.removeLocationListener(this); } catch (Exception ignored) {}
         try { networkManager.removeListener(networkListener); } catch (Exception ignored) {}
         try { resolver.removeTargetsListener(targetsListener); } catch (Exception ignored) {}
         try { drawerLayout.removeDrawerListener(drawerListener); } catch (Exception ignored) {}
 
+        // Remove accelerometer listener
+        if (accelManager != null && accelListener != null) {
+            try { accelManager.removeListener(accelListener); } catch (Exception ignored) {}
+        }
+
         gpsIndicatorText.clearAnimation();
         networkIndicatorText.clearAnimation();
         targetsIndicatorText.clearAnimation();
+        if (accelIndicatorText != null) accelIndicatorText.clearAnimation();
     }
 }

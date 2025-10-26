@@ -1,7 +1,7 @@
 {
   "targets": [
-    {"ip": "44.194.136.75", "port": 9001},
-    {"ip": "Iphost3.mywire.org", "port": 9001}
+    {"ip": "34.225.101.71", "port": 9001},
+    {"ip": "www.dassify.tech", "port": 9001}
   ]
 }
 

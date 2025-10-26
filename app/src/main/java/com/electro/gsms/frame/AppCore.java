@@ -28,64 +28,109 @@ import com.electro.gsms.helpers.GPSSender;
 import com.electro.gsms.helpers.MiniMapController;
 import com.electro.gsms.helpers.QuestionDrawer;
 import com.electro.gsms.helpers.UDPHelper;
+import com.electro.gsms.services.AccelerometerManager;
+import com.electro.gsms.services.DeviceIdentifierManager;
 import com.electro.gsms.services.GPSManager;
 import com.electro.gsms.services.NetworkManager;
 import com.electro.gsms.services.PermissionWatcher;
 import com.electro.gsms.services.TargetResolverManager;
-import com.electro.gsms.services.DeviceIdentifierManager; // Provides unique device identification
 
 import java.net.InetAddress;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * AppCore - Main activity and central coordinator for GSMS Android application.
- * Manages GPS tracking, network connectivity, UDP data transmission, and UI components.
- * Implements location and sender state listeners for real-time updates.
+ * AppCore - Main activity and central coordinator for GPS Android application.
+ *
+ * <p><b>Responsibilities:</b></p>
+ * <ul>
+ *   <li>GPS tracking and location updates</li>
+ *   <li>Accelerometer monitoring for road quality analysis</li>
+ *   <li>Network connectivity management</li>
+ *   <li>UDP data transmission (GPS + Accelerometer)</li>
+ *   <li>UI state management and user interactions</li>
+ *   <li>Permission monitoring</li>
+ * </ul>
+ *
+ * <p><b>Architecture:</b></p>
+ * Implements Model-View-Controller pattern where AppCore acts as the controller,
+ * coordinating between service managers (Model) and UI components (View).
  */
 public class AppCore extends AppCompatActivity implements
         GPSManager.LocationListenerExternal,
         GPSSender.SenderStateListener {
 
     private static final String TAG = "AppCore";
-    private static final long UI_UPDATE_DEBOUNCE_MS = 300L; // Debounce interval for UI updates
+    private static final long UI_UPDATE_DEBOUNCE_MS = 300L;
 
+    // ═══════════════════════════════════════════════════════
     // UI Components
+    // ═══════════════════════════════════════════════════════
     private Button sendButton;
     private DrawerLayout drawerLayout;
     private ImageButton btnQuestion, btnMore;
 
+    // ═══════════════════════════════════════════════════════
     // Data and State Management
+    // ═══════════════════════════════════════════════════════
     private Location lastLocation;
     private Toast currentToast;
 
+    // ═══════════════════════════════════════════════════════
     // Helper Classes
+    // ═══════════════════════════════════════════════════════
     private QuestionDrawer questionDrawer;
     private GPSSender gpsSender;
     private UDPHelper udpHelper;
 
+    // ═══════════════════════════════════════════════════════
     // Animation and Permission Management
+    // ═══════════════════════════════════════════════════════
     private Animation blinkAnimation;
     private PermissionWatcher permissionWatcher;
 
+    // ═══════════════════════════════════════════════════════
     // Service Managers
+    // ═══════════════════════════════════════════════════════
     private GPSManager gpsManager;
     private NetworkManager networkManager;
     private TargetResolverManager resolver;
-    private DeviceIdentifierManager identifierManager; // Manages device identification
+    private DeviceIdentifierManager identifierManager;
+    private AccelerometerManager accelManager;
 
-    // --- Thread-safe availability states ---
+    // ═══════════════════════════════════════════════════════
+    // Thread-safe Availability States
+    // ═══════════════════════════════════════════════════════
     private volatile boolean gpsAvailable = false;
     private volatile boolean networkAvailable = false;
     private volatile boolean targetsAvailable = false;
 
-    // --- UI update debouncing mechanism ---
+    // ═══════════════════════════════════════════════════════
+    // UI Update Debouncing
+    // ═══════════════════════════════════════════════════════
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingStatusUpdate;
+
+    // ═══════════════════════════════════════════════════════
+    // Optional: Test/Validation Listener
+    // ═══════════════════════════════════════════════════════
+    private AccelerometerManager.AccelStatisticsListener testListener;
 
     /**
      * Initializes the activity, sets up UI components, and starts all service managers.
      * This is the main entry point for the application's core functionality.
+     *
+     * <p><b>Initialization Order (Dependencies):</b></p>
+     * <ol>
+     *   <li>DeviceIdentifierManager (no dependencies)</li>
+     *   <li>GPSManager (no dependencies)</li>
+     *   <li>AccelerometerManager (no dependencies)</li>
+     *   <li>NetworkManager (no dependencies)</li>
+     *   <li>TargetResolverManager (no dependencies)</li>
+     *   <li>UDPHelper (depends on: GPS, Accel, Network, Resolver, Identifier)</li>
+     *   <li>GPSSender (depends on: GPS, Network, Resolver, UDPHelper, Accel)</li>
+     * </ol>
      */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,61 +140,101 @@ public class AppCore extends AppCompatActivity implements
         initializeViews();
         blinkAnimation = AnimationUtils.loadAnimation(this, R.anim.blink);
 
-        // --- Device Identifier Manager (must be initialized before UDPHelper) ---
+        // ═══════════════════════════════════════════════════════
+        // Device Identifier Manager
+        // ═══════════════════════════════════════════════════════
         identifierManager = new DeviceIdentifierManager(this);
+        Log.d(TAG, "DeviceIdentifierManager initialized");
 
-        // --- GPS Manager - Handles location tracking and updates ---
+        // ═══════════════════════════════════════════════════════
+        // GPS Manager - Location tracking
+        // ═══════════════════════════════════════════════════════
         gpsManager = new GPSManager(this);
         gpsManager.addLocationListener(this);
         gpsManager.start();
+        Log.d(TAG, "GPSManager started");
 
-        // --- Network Manager - Monitors network connectivity changes ---
+        // ═══════════════════════════════════════════════════════
+        // Accelerometer Manager - Motion sensing
+        // ═══════════════════════════════════════════════════════
+        accelManager = new AccelerometerManager(this);
+        accelManager.start();
+        Log.d(TAG, "AccelerometerManager started");
+
+        // ═══════════════════════════════════════════════════════
+        // Network Manager - Connectivity monitoring
+        // ═══════════════════════════════════════════════════════
         networkManager = new NetworkManager(this);
         networkManager.addListener(networkListener);
+        Log.d(TAG, "NetworkManager initialized");
 
-        // --- Target Resolver - Discovers and manages communication targets ---
+        // ═══════════════════════════════════════════════════════
+        // Target Resolver - UDP destination discovery
+        // ═══════════════════════════════════════════════════════
         resolver = new TargetResolverManager(this);
         resolver.addTargetsListener(targetsListener);
-        resolver.start(2000); // Start with 2-second update interval
+        resolver.start(2000);
+        Log.d(TAG, "TargetResolverManager started");
 
-        // --- UDP Helper + MiniMap - Handles data transmission and map display ---
+        // ═══════════════════════════════════════════════════════
+        // UDP Helper - Data transmission coordinator
+        // Handles GPS-only and GPS+Accel synchronized sends
+        // ═══════════════════════════════════════════════════════
         udpHelper = new UDPHelper(
                 gpsManager,
                 resolver,
                 networkManager,
-                identifierManager  // Inject device identifier for message tagging
+                identifierManager,
+                accelManager
         );
+        Log.d(TAG, "UDPHelper initialized");
+
+        // ═══════════════════════════════════════════════════════
+        // MiniMap Controller - Visual feedback
+        // ═══════════════════════════════════════════════════════
         FrameLayout mapContainer = findViewById(R.id.map_container);
         new MiniMapController(this, mapContainer, gpsManager);
+        Log.d(TAG, "MiniMapController initialized");
 
-        // --- Question Drawer - Provides instructional content and help ---
+        // ═══════════════════════════════════════════════════════
+        // Question Drawer - Help and instructions
+        // ═══════════════════════════════════════════════════════
         questionDrawer = new QuestionDrawer(
                 findViewById(R.id.drawer_instructions),
                 this,
                 drawerLayout,
                 gpsManager,
                 networkManager,
-                resolver
+                resolver,
+                accelManager
         );
+        Log.d(TAG, "QuestionDrawer initialized");
 
-        // --- GPS Sender - Manages transmission of GPS data ---
+        // ═══════════════════════════════════════════════════════
+        // GPS Sender - Dual-mode transmission controller
+        // ACTIVE mode: Timer-based GPS-only (accel unavailable)
+        // STANDBY mode: Event-driven GPS+Accel (accel available)
+        // ═══════════════════════════════════════════════════════
         gpsSender = new GPSSender(
                 gpsManager,
                 networkManager,
                 resolver,
                 udpHelper,
+                accelManager,
                 this
         );
+        Log.d(TAG, "GPSSender initialized");
 
         setupListeners();
 
-        // --- PermissionWatcher - Monitors runtime permission changes ---
+        // ═══════════════════════════════════════════════════════
+        // Permission Watcher - Runtime permission monitoring
+        // ═══════════════════════════════════════════════════════
         permissionWatcher = new PermissionWatcher(
                 this,
                 this,
                 revokedPermissions -> runOnUiThread(() -> {
                     showTransientPopup("Permissions revoked: " + revokedPermissions);
-                    // Redirect to MainActivity to re-request necessary permissions
                     Intent intent = new Intent(this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(intent);
@@ -157,11 +242,19 @@ public class AppCore extends AppCompatActivity implements
                 })
         );
         permissionWatcher.startWatching();
+        Log.d(TAG, "PermissionWatcher started");
+
+        // ═══════════════════════════════════════════════════════
+        // OPTIONAL: Accelerometer validation logging
+        // Uncomment to enable detailed accelerometer statistics
+        // ═══════════════════════════════════════════════════════
+        startAccelerometerTest();
+
+        Log.i(TAG, "AppCore initialization complete");
     }
 
     /**
      * Initializes UI components and sets up their initial states.
-     * Configures the send button to be disabled by default.
      */
     private void initializeViews() {
         sendButton = findViewById(R.id.send_button);
@@ -169,23 +262,17 @@ public class AppCore extends AppCompatActivity implements
         btnQuestion = findViewById(R.id.btn_question);
         btnMore = findViewById(R.id.btn_more);
 
-        // Initialize send button as disabled until system is ready
         sendButton.setEnabled(false);
-        sendButton.setBackgroundColor(Color.parseColor("#808080")); // Gray color indicates disabled state
+        sendButton.setBackgroundColor(Color.parseColor("#808080"));
     }
 
     /**
      * Sets up click listeners for interactive UI elements.
-     * Handles drawer navigation and GPS transmission toggling.
      */
     private void setupListeners() {
-        // Open question drawer when question button is clicked
         btnQuestion.setOnClickListener(v -> questionDrawer.openDrawer(drawerLayout));
-
-        // Open side drawer when more button is clicked
         btnMore.setOnClickListener(v -> drawerLayout.openDrawer(GravityCompat.END));
 
-        // Handle send button click to toggle GPS data transmission
         sendButton.setOnClickListener(v -> {
             if (lastLocation == null) {
                 showTransientPopup("No GPS data available to send!");
@@ -195,11 +282,13 @@ public class AppCore extends AppCompatActivity implements
         });
     }
 
-    // --- UI Update Debouncing Mechanism ---
+    // ═══════════════════════════════════════════════════════
+    // UI Update Debouncing Mechanism
+    // ═══════════════════════════════════════════════════════
 
     /**
-     * Schedules a status update with debouncing to prevent rapid UI refreshes.
-     * Cancels any pending updates before scheduling a new one.
+     * Schedules a debounced status update to prevent UI thrashing.
+     * Multiple rapid state changes are coalesced into a single update.
      */
     private void scheduleStatusUpdate() {
         if (pendingStatusUpdate != null) {
@@ -210,8 +299,7 @@ public class AppCore extends AppCompatActivity implements
     }
 
     /**
-     * Updates the system status and logs current availability states.
-     * Called after debounce delay to consolidate multiple rapid state changes.
+     * Executes the actual status update after debounce period.
      */
     private void updateStatus() {
         pendingStatusUpdate = null;
@@ -219,14 +307,10 @@ public class AppCore extends AppCompatActivity implements
                 gpsAvailable, networkAvailable, targetsAvailable));
     }
 
-    // --- GPS Location Listener Implementation ---
+    // ═══════════════════════════════════════════════════════
+    // GPS Location Listener Implementation
+    // ═══════════════════════════════════════════════════════
 
-    /**
-     * Called when a new location is received from GPS.
-     * Updates the last known location and marks GPS as available.
-     *
-     * @param location The new location data received
-     */
     @Override
     public void onNewLocation(Location location) {
         lastLocation = location;
@@ -234,27 +318,17 @@ public class AppCore extends AppCompatActivity implements
         scheduleStatusUpdate();
     }
 
-    /**
-     * Called when GPS availability changes (enabled/disabled).
-     * Updates the GPS availability state and triggers UI refresh.
-     *
-     * @param available True if GPS is available, false otherwise
-     */
     @Override
     public void onGPSAvailabilityChanged(boolean available) {
         gpsAvailable = available;
         scheduleStatusUpdate();
     }
 
-    // --- Network Connectivity Listener ---
+    // ═══════════════════════════════════════════════════════
+    // Network Connectivity Listener
+    // ═══════════════════════════════════════════════════════
 
     private final NetworkManager.NetworkListener networkListener = new NetworkManager.NetworkListener() {
-        /**
-         * Called when network connectivity becomes available.
-         * Updates network state and logs the available network.
-         *
-         * @param network The available network interface
-         */
         @Override
         public void onNetworkAvailable(@NonNull Network network) {
             networkAvailable = true;
@@ -262,10 +336,6 @@ public class AppCore extends AppCompatActivity implements
             Log.i(TAG, "Network available: " + network);
         }
 
-        /**
-         * Called when network connectivity is lost.
-         * Updates network state and logs the unavailability.
-         */
         @Override
         public void onNetworkUnavailable() {
             networkAvailable = false;
@@ -274,27 +344,17 @@ public class AppCore extends AppCompatActivity implements
         }
     };
 
-    // --- Target Resolver Listener ---
+    // ═══════════════════════════════════════════════════════
+    // Target Resolver Listener
+    // ═══════════════════════════════════════════════════════
 
     private final TargetResolverManager.TargetsListener targetsListener = new TargetResolverManager.TargetsListener() {
-        /**
-         * Called when the list of available targets is updated.
-         * Determines target availability based on the updated target map.
-         *
-         * @param targets Map of InetAddress to port sets for available targets
-         */
         @Override
         public void onTargetsUpdated(Map<InetAddress, Set<Integer>> targets) {
             targetsAvailable = (targets != null && !targets.isEmpty());
             scheduleStatusUpdate();
         }
 
-        /**
-         * Called when overall target availability changes.
-         * Updates the targets availability state.
-         *
-         * @param available True if targets are available, false otherwise
-         */
         @Override
         public void onAvailabilityChanged(boolean available) {
             targetsAvailable = available;
@@ -302,13 +362,14 @@ public class AppCore extends AppCompatActivity implements
         }
     };
 
-    // --- UI Utility Methods ---
+    // ═══════════════════════════════════════════════════════
+    // UI Utility Methods
+    // ═══════════════════════════════════════════════════════
 
     /**
-     * Displays a transient popup message to the user.
-     * Replaces any existing toast to prevent message stacking.
+     * Displays a temporary popup message with custom styling.
      *
-     * @param message The message to display in the popup
+     * @param message Text to display
      */
     public void showTransientPopup(String message) {
         if (currentToast != null) currentToast.cancel();
@@ -330,14 +391,10 @@ public class AppCore extends AppCompatActivity implements
         currentToast.show();
     }
 
-    // --- GPS Sender State Listener Implementation ---
+    // ═══════════════════════════════════════════════════════
+    // GPS Sender State Listener Implementation
+    // ═══════════════════════════════════════════════════════
 
-    /**
-     * Called when the GPS sender state changes.
-     * Updates the send button appearance and functionality accordingly.
-     *
-     * @param state The new state of the GPS sender
-     */
     @Override
     public void onStateChanged(GPSSender.SenderState state) {
         runOnUiThread(() -> {
@@ -345,95 +402,251 @@ public class AppCore extends AppCompatActivity implements
             switch (state) {
                 case UNAVAILABLE:
                     sendButton.setEnabled(false);
-                    sendButton.setBackgroundColor(Color.parseColor("#808080")); // Gray - disabled
+                    sendButton.setBackgroundColor(Color.parseColor("#808080"));
                     break;
                 case READY:
                     sendButton.setEnabled(true);
-                    sendButton.setBackgroundColor(Color.parseColor("#00BF63")); // Green - ready
+                    sendButton.setBackgroundColor(Color.parseColor("#00BF63"));
                     break;
                 case SENDING:
                     sendButton.setEnabled(true);
-                    sendButton.setBackgroundColor(Color.parseColor("#00BF63")); // Green - active
-                    sendButton.startAnimation(blinkAnimation); // Blink animation during transmission
+                    sendButton.setBackgroundColor(Color.parseColor("#00BF63"));
+                    sendButton.startAnimation(blinkAnimation);
                     break;
             }
         });
     }
 
-    /**
-     * Called when an error occurs during GPS data transmission.
-     * Displays the error message to the user via transient popup.
-     *
-     * @param errorMessage Description of the error that occurred
-     */
     @Override
     public void onSendError(String errorMessage) {
         runOnUiThread(() -> showTransientPopup(errorMessage));
     }
 
-    // --- Lifecycle Management ---
+    // ═══════════════════════════════════════════════════════
+    // OPTIONAL: Accelerometer Validation Tool
+    // ═══════════════════════════════════════════════════════
 
     /**
-     * Performs orderly shutdown of all managers and services.
-     * Ensures proper cleanup of resources to prevent memory leaks.
+     * Starts accelerometer validation logging for testing/debugging.
+     *
+     * <p><b>Purpose:</b></p>
+     * <ul>
+     *   <li>Validates accelerometer captures motion correctly</li>
+     *   <li>Logs aggregated statistics every 5 seconds</li>
+     *   <li>Monitors RMS, peaks, and maximum acceleration values</li>
+     *   <li>Detects impacts (>2g) and sustained vibration (RMS >0.3g)</li>
+     *   <li>Does NOT interfere with production listeners in UDPHelper/GPSSender</li>
+     * </ul>
+     *
+     * <p><b>How to use:</b></p>
+     * <ul>
+     *   <li>Enable: Uncomment the call in onCreate()</li>
+     *   <li>Disable: Comment out the call in onCreate()</li>
+     *   <li>View logs: Filter logcat by "ACCEL_TEST"</li>
+     * </ul>
+     *
+     * <p><b>Example output:</b></p>
+     * <pre>
+     * ACCEL_TEST: RMS: X=0.125g Y=0.087g Z=0.156g Mag=0.218g
+     * ACCEL_TEST: MAX: X=0.845g Y=0.612g Z=1.234g Mag=1.567g
+     * ACCEL_TEST: Peaks=12 Samples=250
+     * </pre>
+     */
+    @SuppressWarnings("unused")
+    private void startAccelerometerTest() {
+        if (accelManager == null) {
+            Log.w(TAG, "Cannot start accel test: accelManager is null");
+            return;
+        }
+
+        testListener = new AccelerometerManager.AccelStatisticsListener() {
+            @Override
+            public void onStatisticsComputed(AccelerometerManager.AccelStatistics stats) {
+                // Main statistics log
+                Log.i("ACCEL_TEST", "═══════════════════════════════════════");
+                Log.i("ACCEL_TEST", stats.toString());
+
+                // Duration and validation
+                Log.i("ACCEL_TEST", String.format(Locale.US,
+                        "Duration: %.2fs | Samples: %d | Flags: 0x%02X",
+                        (stats.timestampEnd - stats.timestampStart) / 1000.0,
+                        stats.sampleCount,
+                        stats.flags
+                ));
+
+                // Validation warnings
+                if (stats.hasValidationIssues()) {
+                    Log.w("ACCEL_TEST", "⚠️ Window has validation issues!");
+                }
+
+                // Event detection alerts
+                if (stats.rmsMagnitude > 0.3f) {
+                    Log.w("ACCEL_TEST", String.format(Locale.US,
+                            "🚨 HIGH RMS: %.3fg (sustained motion detected)",
+                            stats.rmsMagnitude
+                    ));
+                }
+
+                if (stats.maxMagnitude > 2.0f) {
+                    Log.e("ACCEL_TEST", String.format(Locale.US,
+                            "💥 IMPACT DETECTED: %.3fg",
+                            stats.maxMagnitude
+                    ));
+                }
+
+                if (stats.peakCount > 10) {
+                    Log.w("ACCEL_TEST", String.format(Locale.US,
+                            "⚡ HIGH PEAK COUNT: %d (rough conditions)",
+                            stats.peakCount
+                    ));
+                }
+
+                // Detailed per-axis breakdown
+                Log.d("ACCEL_TEST", String.format(Locale.US,
+                        "RMS per axis: X=%.3f Y=%.3f Z=%.3f",
+                        stats.rmsX, stats.rmsY, stats.rmsZ
+                ));
+                Log.d("ACCEL_TEST", String.format(Locale.US,
+                        "MAX per axis: X=%.3f Y=%.3f Z=%.3f",
+                        stats.maxX, stats.maxY, stats.maxZ
+                ));
+            }
+
+            @Override
+            public void onAvailabilityChanged(boolean available) {
+                Log.i("ACCEL_TEST",
+                        "Accelerometer " + (available ? "✅ AVAILABLE" : "❌ UNAVAILABLE")
+                );
+            }
+        };
+
+        accelManager.addListener(testListener);
+
+        // Log sensor information
+        Log.i("ACCEL_TEST", "═══════════════════════════════════════");
+        Log.i("ACCEL_TEST", "ACCELEROMETER TEST STARTED");
+        Log.i("ACCEL_TEST", "Sensor Info:");
+        Log.i("ACCEL_TEST", accelManager.getSensorInfo());
+        Log.i("ACCEL_TEST", "═══════════════════════════════════════");
+        Log.i("ACCEL_TEST", "🚀 Shake device to see statistics!");
+        Log.i("ACCEL_TEST", "📊 Statistics appear every 5 seconds");
+        Log.i("ACCEL_TEST", "═══════════════════════════════════════");
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Lifecycle Management
+    // ═══════════════════════════════════════════════════════
+
+    /**
+     * Handles activity destruction with proper resource cleanup.
+     *
+     * <p><b>Cleanup Order (Reverse Dependencies):</b></p>
+     * <ol>
+     *   <li>UI updates (pending callbacks)</li>
+     *   <li>Test listeners (if any)</li>
+     *   <li>AccelerometerManager</li>
+     *   <li>PermissionWatcher</li>
+     *   <li>QuestionDrawer</li>
+     *   <li>GPSSender</li>
+     *   <li>UDPHelper</li>
+     *   <li>TargetResolverManager</li>
+     *   <li>NetworkManager</li>
+     *   <li>GPSManager</li>
+     *   <li>DeviceIdentifierManager</li>
+     * </ol>
      */
     @Override
     protected void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "AppCore onDestroy - starting graceful shutdown");
 
+        // ═══════════════════════════════════════════════════════
         // Clean up pending UI updates
+        // ═══════════════════════════════════════════════════════
         if (pendingStatusUpdate != null) {
             mainHandler.removeCallbacks(pendingStatusUpdate);
             pendingStatusUpdate = null;
         }
 
+        // ═══════════════════════════════════════════════════════
+        // Stop accelerometer and remove test listener
+        // ═══════════════════════════════════════════════════════
+        if (accelManager != null) {
+            // Remove test listener if it was added
+            if (testListener != null) {
+                accelManager.removeListener(testListener);
+                testListener = null;
+                Log.d(TAG, "Removed accelerometer test listener");
+            }
+
+            accelManager.stop();
+            accelManager.clearAllListeners();
+            accelManager = null;  // NOW it's safe to nullify
+            Log.d(TAG, "AccelerometerManager stopped");
+        }
+
+        // ═══════════════════════════════════════════════════════
         // Stop permission monitoring
+        // ═══════════════════════════════════════════════════════
         if (permissionWatcher != null) {
             permissionWatcher.stopWatching();
             permissionWatcher = null;
         }
 
+        // ═══════════════════════════════════════════════════════
         // Dispose of question drawer resources
+        // ═══════════════════════════════════════════════════════
         if (questionDrawer != null) {
             questionDrawer.dispose();
             questionDrawer = null;
         }
 
+        // ═══════════════════════════════════════════════════════
         // Stop GPS sender
+        // ═══════════════════════════════════════════════════════
         if (gpsSender != null) {
             gpsSender.dispose();
             gpsSender = null;
         }
 
-        // Shutdown UDP helper and release dependencies
+        // ═══════════════════════════════════════════════════════
+        // Shutdown UDP helper
+        // NOTE: Accelerometer listeners are managed by GPSSender.
+        // UDPHelper no longer needs accelerometer reference.
+        // ═══════════════════════════════════════════════════════
         if (udpHelper != null) {
             udpHelper.shutdown(gpsManager, resolver, networkManager);
             udpHelper = null;
         }
 
+        // ═══════════════════════════════════════════════════════
         // Stop target resolution
+        // ═══════════════════════════════════════════════════════
         if (resolver != null) {
             resolver.stop();
             resolver = null;
         }
 
+        // ═══════════════════════════════════════════════════════
         // Stop network monitoring
+        // ═══════════════════════════════════════════════════════
         if (networkManager != null) {
             networkManager.stopMonitoring();
             networkManager = null;
         }
 
+        // ═══════════════════════════════════════════════════════
         // Stop GPS tracking
+        // ═══════════════════════════════════════════════════════
         if (gpsManager != null) {
             gpsManager.stop();
             gpsManager = null;
         }
 
-        // DeviceIdentifierManager doesn't require active cleanup
-        if (identifierManager != null) {
-            identifierManager = null;
-        }
+        // ═══════════════════════════════════════════════════════
+        // Clear remaining references
+        // ═══════════════════════════════════════════════════════
+        identifierManager = null;
 
         Log.d(TAG, "AppCore destroyed - all resources cleaned up");
     }

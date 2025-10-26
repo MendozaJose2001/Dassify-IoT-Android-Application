@@ -4,6 +4,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import com.electro.gsms.services.AccelerometerManager;
 import com.electro.gsms.services.GPSManager;
 import com.electro.gsms.services.NetworkManager;
 import com.electro.gsms.services.TargetResolverManager;
@@ -18,9 +19,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * GPSSender
- * Handles periodic GPS sending via UDP/TCP.
- * Notifies listener about sending state and errors.
+ * GPSSender - Manages GPS data transmission with dual operating modes.
+ *
+ * <p><b>Operating Modes:</b></p>
+ * <ul>
+ *   <li>ACTIVE: Timer-based GPS-only sends (accelerometer unavailable)</li>
+ *   <li>STANDBY: Event-driven GPS+Accel synchronized sends (accelerometer available)</li>
+ * </ul>
+ *
+ * <p><b>Mode switching:</b></p>
+ * Automatically switches between modes based on accelerometer availability.
+ * In STANDBY, AccelerometerManager triggers sends via UDPHelper.
+ * In ACTIVE, GPSSender sends GPS-only data every 5 seconds.
  */
 public class GPSSender {
 
@@ -33,79 +43,132 @@ public class GPSSender {
         SENDING         // Actively sending GPS data
     }
 
+    // ═══════════════════════════════════════════════════════
+    // Operating Mode Definition
+    // ═══════════════════════════════════════════════════════
+
+    /**
+     * Operating modes for GPSSender
+     */
+    private enum OperatingMode {
+        /**
+         * ACTIVE: Timer-based sending (accelerometer not controlling sends).
+         * GPSSender actively sends GPS-only data every 5 seconds.
+         */
+        ACTIVE,
+
+        /**
+         * STANDBY: Event-driven sending (accelerometer controlling sends).
+         * GPSSender stands by while AccelerometerManager triggers sends.
+         */
+        STANDBY
+    }
+
     private static final String TAG = "GPSSender";
 
     /**
      * Interface for receiving sender state updates and errors
      */
     public interface SenderStateListener {
-        /**
-         * Called when the sender state changes
-         * @param state The new sender state
-         */
         void onStateChanged(SenderState state);
-
-        /**
-         * Called when an error occurs during sending
-         * @param message Error description
-         */
         void onSendError(String message);
     }
+
+    // ═══════════════════════════════════════════════════════
+    // Dependencies
+    // ═══════════════════════════════════════════════════════
 
     private final GPSManager gpsManager;
     private final NetworkManager networkManager;
     private final TargetResolverManager resolver;
     private final UDPHelper udpHelper;
+    private final AccelerometerManager accelManager;  // Can be null
 
     private final SenderStateListener listener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    // ═══════════════════════════════════════════════════════
+    // Configuration
+    // ═══════════════════════════════════════════════════════
+
     private static final long SEND_INTERVAL_MS = 5000;
-    private static final long DEBOUNCE_STATE_MS = 500L; // Debounce 500ms for state notifications
+    private static final long DEBOUNCE_STATE_MS = 500L;
+
+    // ═══════════════════════════════════════════════════════
+    // State Management
+    // ═══════════════════════════════════════════════════════
 
     private final AtomicBoolean sending = new AtomicBoolean(false);
     private volatile boolean gpsAvailable = false;
     private volatile boolean networkAvailable = false;
     private volatile boolean targetsAvailable = false;
+    private volatile boolean accelAvailable = false;
+
+    private volatile OperatingMode currentMode;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> sendingTask = null;
 
     private final Object stateLock = new Object();
     private volatile boolean disposed = false;
-    private long lastStateNotificationTime = 0; // Debounce control
+    private long lastStateNotificationTime = 0;
 
-    /**
-     * Constructs a GPSSender instance
-     * @param gpsManager GPS manager for location data
-     * @param networkManager Network manager for connectivity
-     * @param resolver Target resolver for UDP destinations
-     * @param udpHelper UDP helper for data transmission
-     * @param listener Listener for state and error notifications
-     */
+    // ═══════════════════════════════════════════════════════
+    // Constructor
+    // ═══════════════════════════════════════════════════════
+
     public GPSSender(GPSManager gpsManager,
                      NetworkManager networkManager,
                      TargetResolverManager resolver,
                      UDPHelper udpHelper,
+                     AccelerometerManager accelManager,
                      SenderStateListener listener) {
+
         this.gpsManager = gpsManager;
         this.networkManager = networkManager;
         this.resolver = resolver;
         this.udpHelper = udpHelper;
+        this.accelManager = accelManager;
         this.listener = listener;
 
-        // Register listeners for dependency updates
         gpsManager.addLocationListener(gpsListener);
         networkManager.addListener(networkListener);
         resolver.addTargetsListener(targetsListener);
+
+        if (accelManager != null) {
+            // ═══════════════════════════════════════════════════════
+            // Register TWO listeners for different purposes:
+            // 1. accelListener → handles mode switching (ACTIVE ↔ STANDBY)
+            // 2. standbyModeAccelListener → handles send authorization (gateway)
+            // ═══════════════════════════════════════════════════════
+
+            accelManager.addListener(accelListener);              // Mode switching
+            accelManager.addListener(standbyModeAccelListener);   // Send gateway
+
+            boolean accelRunning = accelManager.isSensorAvailable() &&
+                    accelManager.isRunning();
+
+            if (accelRunning) {
+                currentMode = OperatingMode.STANDBY;
+                accelAvailable = true;
+                Log.d(TAG, "🟢 GPSSender initialized in STANDBY mode (accel available)");
+            } else {
+                currentMode = OperatingMode.ACTIVE;
+                Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (accel not running)");
+            }
+        } else {
+            currentMode = OperatingMode.ACTIVE;
+            Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (no accel manager)");
+        }
 
         captureInitialState();
         notifyState();
     }
 
-    /**
-     * Toggle sending on/off
-     */
+    // ═══════════════════════════════════════════════════════
+    // Public API
+    // ═══════════════════════════════════════════════════════
+
     public void toggleSending() {
         if (disposed) {
             Log.w(TAG, "Cannot toggle: GPSSender is disposed");
@@ -126,9 +189,6 @@ public class GPSSender {
         }
     }
 
-    /**
-     * Start periodic sending
-     */
     private void startSending() {
         if (sendingTask != null && !sendingTask.isCancelled()) {
             sendingTask.cancel(false);
@@ -137,19 +197,19 @@ public class GPSSender {
         sending.set(true);
         notifyState();
 
-        sendingTask = scheduler.scheduleWithFixedDelay(
-                this::sendOnce,
-                0,
-                SEND_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-        );
-
-        Log.d(TAG, "Started sending");
+        if (currentMode == OperatingMode.ACTIVE) {
+            sendingTask = scheduler.scheduleWithFixedDelay(
+                    this::sendOnce,
+                    0,
+                    SEND_INTERVAL_MS,
+                    TimeUnit.MILLISECONDS
+            );
+            Log.d(TAG, "🟢 Started in ACTIVE mode (timer-based GPS-only, interval=" + SEND_INTERVAL_MS + "ms)");
+        } else {
+            Log.d(TAG, "🟢 Started in STANDBY mode (accel-driven GPS+Accel synchronized)");
+        }
     }
 
-    /**
-     * Stop sending
-     */
     private void stopSending() {
         sending.set(false);
 
@@ -158,16 +218,19 @@ public class GPSSender {
             sendingTask = null;
         }
 
-        Log.d(TAG, "Stopped sending");
+        Log.d(TAG, "🔴 Stopped sending");
         notifyState();
     }
 
-    /**
-     * Single send iteration
-     */
     private void sendOnce() {
+        if (currentMode != OperatingMode.ACTIVE) {
+            return;
+        }
+
         if (!sending.get() || !gpsAvailable || !networkAvailable || !targetsAvailable) {
-            if (sending.get()) stopSending();
+            if (sending.get()) {
+                stopSending();
+            }
             if (!gpsAvailable || !networkAvailable || !targetsAvailable) {
                 final String errorMsg = "Sending stopped: a required service is unavailable";
                 mainHandler.post(() -> {
@@ -191,13 +254,8 @@ public class GPSSender {
         }
     }
 
-    /**
-     * Notify listener about current state (with debouncing)
-     */
     private void notifyState() {
         long now = System.currentTimeMillis();
-
-        // Debounce: only notify if >500ms passed since last notification
         if (now - lastStateNotificationTime < DEBOUNCE_STATE_MS) {
             return;
         }
@@ -220,30 +278,23 @@ public class GPSSender {
         });
     }
 
-    /**
-     * Captures initial state from services
-     */
     private void captureInitialState() {
         try {
             synchronized (stateLock) {
                 gpsAvailable = gpsManager.isGPSAvailable();
                 networkAvailable = networkManager.isNetworkAvailable();
 
-                Log.d(TAG, "Initial state: GPS=" + gpsAvailable
-                        + ", Network=" + networkAvailable
-                        + ", Targets=" + targetsAvailable);
+                Log.d(TAG, String.format("Initial state: GPS=%b, Network=%b, Targets=%b, Accel=%b, Mode=%s",
+                        gpsAvailable, networkAvailable, targetsAvailable, accelAvailable, currentMode));
             }
         } catch (Exception e) {
             Log.e(TAG, "Error capturing initial state", e);
         }
     }
 
-    /** Listeners for dependency updates */
     private final GPSManager.LocationListenerExternal gpsListener = new GPSManager.LocationListenerExternal() {
         @Override
-        public void onNewLocation(android.location.Location location) {
-            // Location updates are handled by the periodic sending task
-        }
+        public void onNewLocation(android.location.Location location) {}
 
         @Override
         public void onGPSAvailabilityChanged(boolean available) {
@@ -322,68 +373,96 @@ public class GPSSender {
         }
     };
 
-    // ---------------------------------------------------------------
-    // Public API
-    // ---------------------------------------------------------------
+    /**
+     * Accelerometer listener for automatic mode switching.
+     */
+    private final AccelerometerManager.AccelStatisticsListener accelListener =
+            new AccelerometerManager.AccelStatisticsListener() {
+                @Override
+                public void onStatisticsComputed(AccelerometerManager.AccelStatistics statistics) {
+                    if (currentMode == OperatingMode.STANDBY && sending.get()) {
+                        Log.d(TAG, "📊 Accel-driven send completed (STANDBY mode)");
+                    }
+                }
+
+                @Override
+                public void onAvailabilityChanged(boolean available) {
+                    try {
+                        synchronized (stateLock) {
+                            accelAvailable = available;
+                            OperatingMode newMode = available ?
+                                    OperatingMode.STANDBY : OperatingMode.ACTIVE;
+
+                            if (newMode != currentMode) {
+                                Log.i(TAG, String.format(
+                                        "🔄 Mode switch: %s → %s (accel %s)",
+                                        currentMode, newMode,
+                                        available ? "available" : "unavailable"
+                                ));
+
+                                currentMode = newMode;
+
+                                if (sending.get()) {
+                                    stopSending();
+                                    startSending();
+                                }
+                            }
+
+                            if (!available && sending.get()) {
+                                Log.w(TAG, "⚠️ Accelerometer lost - switching to GPS-only");
+                            }
+                        }
+                        notifyState();
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Error in accelerometer callback", t);
+                    }
+                }
+            };
 
     /**
-     * Checks if currently sending GPS data
-     * @return true if actively sending
+     * Accelerometer listener for STANDBY mode event-driven sends.
      */
-    @SuppressWarnings("unused")
-    public boolean isSending() {
-        return sending.get();
-    }
+    private final AccelerometerManager.AccelStatisticsListener standbyModeAccelListener =
+            new AccelerometerManager.AccelStatisticsListener() {
+                @Override
+                public void onStatisticsComputed(AccelerometerManager.AccelStatistics statistics) {
+                    try {
+                        if (currentMode != OperatingMode.STANDBY) {
+                            return;
+                        }
+                        if (!sending.get()) {
+                            Log.d(TAG, "⏸️ Accel event ignored: sending not authorized by user");
+                            return;
+                        }
+                        if (!gpsAvailable || !networkAvailable || !targetsAvailable) {
+                            Log.w(TAG, "⚠️ Accel event ignored: required services not ready");
 
-    /**
-     * Checks if GPS service is available
-     * @return true if GPS signal is available
-     */
-    @SuppressWarnings("unused")
-    public boolean isGPSAvailable() {
-        return gpsAvailable;
-    }
+                            if (sending.get()) {
+                                stopSending();
+                                final String errorMsg = "Sending stopped: a required service is unavailable";
+                                mainHandler.post(() -> {
+                                    if (listener != null) {
+                                        listener.onSendError(errorMsg);
+                                    }
+                                });
+                            }
+                            return;
+                        }
 
-    /**
-     * Checks if cellular network is available
-     * @return true if network is available
-     */
-    @SuppressWarnings("unused")
-    public boolean isNetworkAvailable() {
-        return networkAvailable;
-    }
+                        Log.d(TAG, "📊 STANDBY mode: Delegating accel-driven send to UDPHelper");
+                        udpHelper.sendDataTriggeredByAccel(statistics);
 
-    /**
-     * Checks if UDP targets are resolved and available
-     * @return true if targets are available
-     */
-    @SuppressWarnings("unused")
-    public boolean areTargetsAvailable() {
-        return targetsAvailable;
-    }
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Error processing accel event in STANDBY mode", t);
+                    }
+                }
 
-    /**
-     * Checks if all dependencies are ready for sending
-     * @return true if ready to start sending
-     */
-    @SuppressWarnings("unused")
-    public boolean isReady() {
-        return gpsAvailable && networkAvailable && targetsAvailable && !disposed;
-    }
+                @Override
+                public void onAvailabilityChanged(boolean available) {
+                    // No action needed here
+                }
+            };
 
-    /**
-     * Checks if GPSSender has been disposed
-     * @return true if disposed
-     */
-    @SuppressWarnings("unused")
-    public boolean isDisposed() {
-        return disposed;
-    }
-
-    /**
-     * Dispose all listeners and scheduler
-     * Cleans up resources and stops any active sending
-     */
     public void dispose() {
         if (disposed) {
             Log.w(TAG, "Already disposed, ignoring");
@@ -391,15 +470,22 @@ public class GPSSender {
         }
         disposed = true;
 
-        Log.d(TAG, "Disposing GPSSender");
+        Log.d(TAG, "🔴 Disposing GPSSender");
         stopSending();
 
-        // Remove all listeners
         gpsManager.removeLocationListener(gpsListener);
         networkManager.removeListener(networkListener);
         resolver.removeTargetsListener(targetsListener);
 
-        // Shutdown scheduler
+        // ═══════════════════════════════════════════════════════
+        // Remove BOTH accelerometer listeners
+        // ═══════════════════════════════════════════════════════
+        if (accelManager != null) {
+            accelManager.removeListener(accelListener);              // Mode switching
+            accelManager.removeListener(standbyModeAccelListener);   // Send gateway
+            Log.d(TAG, "Removed accelerometer listeners (mode switching + send gateway)");
+        }
+
         scheduler.shutdown();
         try {
             if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {

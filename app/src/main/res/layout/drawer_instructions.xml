@@ -89,7 +89,72 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="4dp" />
-
     </ScrollView>
+
+
+    <!-- Separador -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="8dp"
+        android:background="#40FFFFFF" />
+
+    <!-- Sección de Testing/Debug -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Testing Controls"
+        android:textColor="#AAAAAA"
+        android:textSize="12sp"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Indicador de Acelerómetro -->
+    <TextView
+        android:id="@+id/accel_indicator_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Accelerometer"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:drawablePadding="8dp"
+        android:gravity="center_vertical"
+        android:padding="16dp" />
+
+    <!-- Switch del Acelerómetro -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:paddingTop="8dp"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Enable Accelerometer"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_accelerometer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true" />
+    </LinearLayout>
+
+    <!-- Modo actual (ACTIVE/STANDBY) -->
+    <TextView
+        android:id="@+id/accel_mode_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Mode: STANDBY (event-driven)"
+        android:textColor="#AAAAAA"
+        android:textSize="12sp"
+        android:padding="16dp"
+        android:paddingTop="4dp" />
 
 </LinearLayout>

@@ -8,4 +8,6 @@
     <string name="targets_label">Targets</string>
     <string name="available_services">Available Services</string>
     <string name="resolved_targets">Resolved Targets</string>
+    <string name="mode_standby">Mode: STANDBY (event-driven)</string>
+    <string name="mode_active">Mode: ACTIVE (timer-based GPS-only)</string>
 </resources>
