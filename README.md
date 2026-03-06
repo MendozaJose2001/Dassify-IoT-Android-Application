@@ -38,8 +38,7 @@ Los dispositivos IoT generan datos de telemetría relacionados con la posición 
 - **Procesamiento y empaquetado** de telemetría
 - **Transmisión UDP sobre red LTE/4G** hacia endpoint en AWS
 - **Indicadores visuales** de estado de conexión
-- **Modo background** para operación continua durante el transporte
-
+  
 ---
 
 ## Tecnologías Utilizadas
