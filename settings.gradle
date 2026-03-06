@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GSMS"
+rootProject.name = "Dassify Application"
 include ':app'

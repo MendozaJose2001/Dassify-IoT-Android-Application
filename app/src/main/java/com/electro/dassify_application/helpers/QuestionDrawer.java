@@ -1,4 +1,4 @@
-package com.electro.gsms.helpers;
+package com.electro.dassify_application.helpers;
 
 import android.content.Context;
 import android.location.Location;
@@ -13,11 +13,11 @@ import androidx.appcompat.widget.SwitchCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.core.view.GravityCompat;
 
-import com.electro.gsms.R;
-import com.electro.gsms.services.AccelerometerManager;
-import com.electro.gsms.services.GPSManager;
-import com.electro.gsms.services.NetworkManager;
-import com.electro.gsms.services.TargetResolverManager;
+import com.electro.dassify_application.R;
+import com.electro.dassify_application.services.AccelerometerManager;
+import com.electro.dassify_application.services.GPSManager;
+import com.electro.dassify_application.services.NetworkManager;
+import com.electro.dassify_application.services.TargetResolverManager;
 
 import java.net.InetAddress;
 import java.util.Collections;

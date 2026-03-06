@@ -1,4 +1,4 @@
-package com.electro.gsms.services;
+package com.electro.dassify_application.services;
 
 import android.annotation.SuppressLint;
 import android.content.Context;

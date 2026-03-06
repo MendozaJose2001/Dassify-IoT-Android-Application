@@ -13,8 +13,19 @@
     <!-- Network state for connectivity awareness -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Bluetooth permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Android 12+ (API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+
     <!-- Optional: if actively managing network selection -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+
+    <!-- ✅ NUEVO: Vibration para feedback al activar WiFi testing -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"

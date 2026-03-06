@@ -1,4 +1,4 @@
-package com.electro.gsms;
+package com.electro.dassify_application;
 
 import android.content.Context;
 
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
     public void useAppContext() {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.electro.gsms", appContext.getPackageName());
+        assertEquals("com.electro.dassify_application", appContext.getPackageName());
     }
 }

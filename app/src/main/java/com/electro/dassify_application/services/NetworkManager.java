@@ -1,4 +1,4 @@
-package com.electro.gsms.services;
+package com.electro.dassify_application.services;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -24,11 +24,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * - Immediate state notification for new listeners.
  * - Memory leak prevention via ApplicationContext.
  * - Safe start/stop and null checks for extreme edge cases.
+ *
+ * ✅ TESTING MODE: Can allow WiFi temporarily via setTestingMode(true)
  */
 public class NetworkManager {
 
     private static final String TAG = "NetworkManager";
     private static final long DEFAULT_DEBOUNCE_MS = 1000L;
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // ✅ NUEVO: Flag para habilitar WiFi en testing (default: false = solo cellular)
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    private static volatile boolean ALLOW_WIFI_FOR_TESTING = false;
 
     /**
      * Interface for monitoring network connectivity state changes
@@ -93,6 +100,8 @@ public class NetworkManager {
 
     /**
      * Initializes the network callback to monitor connectivity changes
+     *
+     * ✅ MODIFICADO: Soporta WiFi cuando ALLOW_WIFI_FOR_TESTING = true
      */
     private void initNetworkCallback() {
         networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -112,15 +121,40 @@ public class NetworkManager {
                     return;
                 }
 
-                // Check if this is a cellular network with internet capability
-                boolean hasInternet = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
-                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                // ═══════════════════════════════════════════════════════════════════════════
+                // ✅ MODIFICADO: Condicional para WiFi testing
+                // ═══════════════════════════════════════════════════════════════════════════
+                boolean hasInternet;
+                String transportType;
+
+                if (ALLOW_WIFI_FOR_TESTING) {
+                    // ✅ TESTING MODE: Permite WiFi o Cellular
+                    hasInternet =
+                            (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) &&
+                                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+
+                    transportType = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?
+                            "WiFi" : "Cellular";
+
+                    Log.d(TAG, "🔧 Testing mode: Network via " + transportType);
+                } else {
+                    // ❌ PRODUCTION MODE: Solo Cellular
+                    hasInternet = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+
+                    transportType = "Cellular";
+
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        Log.d(TAG, "Production mode: Ignoring WiFi network");
+                    }
+                }
 
                 networkAvailable = hasInternet;
                 activeNetwork = hasInternet ? network : null;
 
-                Log.d(TAG, "Network available: " + network + " | hasInternet=" + hasInternet
-                        + " | listeners=" + listeners.size());
+                Log.d(TAG, String.format("Network available: %s | Transport: %s | hasInternet=%b | listeners=%d",
+                        network, transportType, hasInternet, listeners.size()));
 
                 notifyListeners(hasInternet, network);
             }
@@ -150,19 +184,38 @@ public class NetworkManager {
 
     /**
      * Starts monitoring network connectivity changes
+     *
+     * ✅ MODIFICADO: Registra WiFi cuando ALLOW_WIFI_FOR_TESTING = true
      */
     @SuppressLint("MissingPermission")
     private synchronized void startMonitoring() {
         if (connectivityManager == null || monitoring) return;
 
         try {
-            NetworkRequest request = new NetworkRequest.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            // ═══════════════════════════════════════════════════════════════════════════
+            // ✅ MODIFICADO: NetworkRequest adaptativo
+            // ═══════════════════════════════════════════════════════════════════════════
+            NetworkRequest.Builder builder = new NetworkRequest.Builder();
+
+            if (ALLOW_WIFI_FOR_TESTING) {
+                // ✅ TESTING MODE: Monitorear WiFi + Cellular
+                builder.addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
+
+                Log.i(TAG, "🔧 Network monitoring started: WiFi + Cellular (TESTING MODE)");
+            } else {
+                // ❌ PRODUCTION MODE: Solo Cellular
+                builder.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR);
+
+                Log.i(TAG, "Network monitoring started: Cellular only (PRODUCTION MODE)");
+            }
+
+            NetworkRequest request = builder
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     .build();
 
             connectivityManager.registerNetworkCallback(request, networkCallback);
             monitoring = true;
-            Log.d(TAG, "Network monitoring started");
 
             // Capture initial network state
             captureInitialState();
@@ -180,14 +233,27 @@ public class NetworkManager {
             Network initialNetwork = connectivityManager.getActiveNetwork();
             if (initialNetwork != null) {
                 NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(initialNetwork);
-                boolean hasInternet = caps != null &&
-                        caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
-                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+
+                boolean hasInternet;
+
+                if (ALLOW_WIFI_FOR_TESTING) {
+                    hasInternet = caps != null &&
+                            (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                } else {
+                    hasInternet = caps != null &&
+                            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                }
 
                 if (hasInternet) {
                     activeNetwork = initialNetwork;
                     networkAvailable = true;
-                    Log.d(TAG, "Initial cellular network detected: " + initialNetwork);
+
+                    String transport = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?
+                            "WiFi" : "Cellular";
+                    Log.d(TAG, "Initial network detected: " + initialNetwork + " (" + transport + ")");
 
                     // Only notify if there are active listeners
                     if (!listeners.isEmpty()) {
@@ -226,6 +292,44 @@ public class NetworkManager {
             }
         });
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // ✅ NUEVO: Método público para cambiar modo en runtime
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Enables or disables WiFi for testing purposes.
+     *
+     * ⚠️ WARNING: This requires restarting network monitoring to take effect.
+     *
+     * Usage:
+     *   NetworkManager.setTestingMode(true);   // Enable WiFi
+     *   networkManager.stopMonitoring();
+     *   // Recreate NetworkManager or restart monitoring
+     *
+     * @param allowWifi true to allow WiFi (testing), false for cellular only (production)
+     */
+    public static void setTestingMode(boolean allowWifi) {
+        boolean changed = (ALLOW_WIFI_FOR_TESTING != allowWifi);
+        ALLOW_WIFI_FOR_TESTING = allowWifi;
+
+        if (changed) {
+            Log.w(TAG, String.format("🔧 Testing mode %s: WiFi %s",
+                    allowWifi ? "ENABLED" : "DISABLED",
+                    allowWifi ? "allowed" : "blocked"));
+        }
+    }
+
+    /**
+     * Gets current testing mode state.
+     *
+     * @return true if WiFi is allowed (testing mode), false if cellular only (production)
+     */
+    public static boolean isTestingMode() {
+        return ALLOW_WIFI_FOR_TESTING;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
 
     // ---------------------------------------------------------------
     // Public API

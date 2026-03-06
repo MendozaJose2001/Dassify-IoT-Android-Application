@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Question Drawer Layout
-    Displays service indicators and a real-time list of resolved targets.
-    Optimized using TextView compound drawables with AppCompat for backward compatibility.
+    Question Drawer Layout (instructions)
+    Displays service indicators, real-time list of resolved targets and sensor source controls.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -91,7 +90,73 @@
             android:padding="4dp" />
     </ScrollView>
 
+    <!-- ───────────────────────────────────────────────────── -->
+    <!-- Sensor Source Selection (moved to instructions)       -->
+    <!-- ───────────────────────────────────────────────────── -->
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="12dp"
+        android:background="#40FFFFFF" />
+
+    <TextView
+        android:id="@+id/sensor_source_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sensor_source_title"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingBottom="6dp" />
+
+    <TextView
+        android:id="@+id/sensor_source_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sensor_source_description"
+        android:textColor="@android:color/white"
+        android:textSize="12sp"
+        android:paddingBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/sensor_source_radio_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/radio_internal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/sensor_source_internal"
+            android:textColor="@android:color/white"
+            android:checked="true"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+
+        <RadioButton
+            android:id="@+id/radio_external"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/sensor_source_external"
+            android:textColor="@android:color/white"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+    </RadioGroup>
+
+    <TextView
+        android:id="@+id/bluetooth_status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/bluetooth_status_disconnected"
+        android:textColor="#FF3131"
+        android:textSize="14sp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
+    <!-- ───────────────────────────────────────────────────── -->
     <!-- Separador -->
     <View
         android:layout_width="match_parent"

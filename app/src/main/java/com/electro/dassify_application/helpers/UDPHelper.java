@@ -1,4 +1,4 @@
-package com.electro.gsms.helpers;
+package com.electro.dassify_application.helpers;
 
 import android.location.Location;
 import android.net.Network;
@@ -6,11 +6,11 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import com.electro.gsms.services.AccelerometerManager;
-import com.electro.gsms.services.TargetResolverManager;
-import com.electro.gsms.services.GPSManager;
-import com.electro.gsms.services.NetworkManager;
-import com.electro.gsms.services.DeviceIdentifierManager;
+import com.electro.dassify_application.services.AccelerometerManager;
+import com.electro.dassify_application.services.TargetResolverManager;
+import com.electro.dassify_application.services.GPSManager;
+import com.electro.dassify_application.services.NetworkManager;
+import com.electro.dassify_application.services.DeviceIdentifierManager;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;

@@ -1,4 +1,4 @@
-package com.electro.gsms;
+package com.electro.dassify_application;
 
 import org.junit.Test;
 

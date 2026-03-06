@@ -1,4 +1,4 @@
-package com.electro.gsms.helpers;
+package com.electro.dassify_application.helpers;
 
 import android.app.Activity;
 import android.content.pm.PackageManager;
@@ -35,9 +35,32 @@ public class PermissionManager {
 
     // --- Required permissions for the app ---
     // 🔹 Now public and accessible from other components
-    public static final String[] REQUIRED_PERMISSIONS = new String[]{
-            android.Manifest.permission.ACCESS_FINE_LOCATION
-    };
+    public static final String[] REQUIRED_PERMISSIONS = buildPermissionsList();
+
+    /**
+     * Build permissions list dynamically based on Android API level.
+     * Android 12+ (API 31) requires BLUETOOTH_CONNECT and BLUETOOTH_SCAN.
+     * Android 6-11 (API 23-30) requires BLUETOOTH and BLUETOOTH_ADMIN.
+     */
+    private static String[] buildPermissionsList() {
+        java.util.List<String> permissions = new java.util.ArrayList<>();
+
+        // GPS permission (always required)
+        permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
+
+        // Bluetooth permissions (API level dependent)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Android 12+ (API 31+)
+            permissions.add(android.Manifest.permission.BLUETOOTH_CONNECT);
+            permissions.add(android.Manifest.permission.BLUETOOTH_SCAN);
+        } else {
+            // Android 6-11 (API 23-30)
+            permissions.add(android.Manifest.permission.BLUETOOTH);
+            permissions.add(android.Manifest.permission.BLUETOOTH_ADMIN);
+        }
+
+        return permissions.toArray(new String[0]);
+    }
 
     /**
      * Constructs a PermissionManager instance

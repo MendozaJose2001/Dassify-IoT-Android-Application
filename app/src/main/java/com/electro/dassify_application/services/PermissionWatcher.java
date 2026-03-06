@@ -1,4 +1,4 @@
-package com.electro.gsms.services;
+package com.electro.dassify_application.services;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -8,7 +8,7 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
 
-import com.electro.gsms.helpers.PermissionManager;
+import com.electro.dassify_application.helpers.PermissionManager;
 
 import java.util.ArrayList;
 import java.util.List;

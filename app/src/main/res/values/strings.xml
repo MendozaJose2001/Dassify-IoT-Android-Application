@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">GSMS</string>
+    <string name="app_name">Dassify Application</string>
     <string name="btn_send_sms">Enviar SMS</string>
     <!-- res/values/strings.xml -->
     <string name="port_label">Port: %1$d</string>
@@ -10,4 +10,12 @@
     <string name="resolved_targets">Resolved Targets</string>
     <string name="mode_standby">Mode: STANDBY (event-driven)</string>
     <string name="mode_active">Mode: ACTIVE (timer-based GPS-only)</string>
+    <string name="sensor_source_title">SENSOR SOURCE</string>
+    <string name="sensor_source_description">Choose between internal phone sensors or external ESP32 accelerometer</string>
+    <string name="sensor_source_internal">Internal (Phone sensors)</string>
+    <string name="sensor_source_external">External (ESP32 via Bluetooth)</string>
+
+    <string name="bluetooth_status_disconnected">Bluetooth: Disconnected</string>
+    <string name="bluetooth_status_connecting">Bluetooth: Connecting…</string>
+    <string name="bluetooth_status_connected">Bluetooth: Connected</string>
 </resources>

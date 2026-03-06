@@ -1,4 +1,4 @@
-package com.electro.gsms.helpers;
+package com.electro.dassify_application.helpers;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
@@ -12,8 +12,8 @@ import android.widget.TextView;
 
 import androidx.core.content.res.ResourcesCompat;
 
-import com.electro.gsms.R;
-import com.electro.gsms.services.GPSManager;
+import com.electro.dassify_application.R;
+import com.electro.dassify_application.services.GPSManager;
 
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;

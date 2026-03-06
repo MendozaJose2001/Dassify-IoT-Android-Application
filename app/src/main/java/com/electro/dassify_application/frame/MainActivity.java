@@ -1,4 +1,4 @@
-package com.electro.gsms.frame;
+package com.electro.dassify_application.frame;
 
 import android.content.Intent;
 import android.os.Bundle;
@@ -12,8 +12,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.electro.gsms.R;
-import com.electro.gsms.helpers.PermissionManager;
+import com.electro.dassify_application.R;
+import com.electro.dassify_application.helpers.PermissionManager;
 
 /**
  * MainActivity: Splash screen and entry point of the app.

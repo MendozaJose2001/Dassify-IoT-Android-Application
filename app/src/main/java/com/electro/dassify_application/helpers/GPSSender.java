@@ -1,13 +1,13 @@
-package com.electro.gsms.helpers;
+package com.electro.dassify_application.helpers;
 
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import com.electro.gsms.services.AccelerometerManager;
-import com.electro.gsms.services.GPSManager;
-import com.electro.gsms.services.NetworkManager;
-import com.electro.gsms.services.TargetResolverManager;
+import com.electro.dassify_application.services.AccelerometerManager;
+import com.electro.dassify_application.services.GPSManager;
+import com.electro.dassify_application.services.NetworkManager;
+import com.electro.dassify_application.services.TargetResolverManager;
 
 import java.net.InetAddress;
 import java.util.Map;
@@ -29,8 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p><b>Mode switching:</b></p>
  * Automatically switches between modes based on accelerometer availability.
- * In STANDBY, AccelerometerManager triggers sends via UDPHelper.
+ * In STANDBY, SensorSourceManager triggers sends via UDPHelper.
  * In ACTIVE, GPSSender sends GPS-only data every 5 seconds.
+ *
+ * <p><b>Dual Source Support:</b></p>
+ * Works with both INTERNAL (phone sensors) and EXTERNAL (ESP32 + MPU6050) sources
+ * through unified SensorSourceManager interface.
  */
 public class GPSSender {
 
@@ -59,7 +63,7 @@ public class GPSSender {
 
         /**
          * STANDBY: Event-driven sending (accelerometer controlling sends).
-         * GPSSender stands by while AccelerometerManager triggers sends.
+         * GPSSender stands by while SensorSourceManager triggers sends.
          */
         STANDBY
     }
@@ -82,7 +86,7 @@ public class GPSSender {
     private final NetworkManager networkManager;
     private final TargetResolverManager resolver;
     private final UDPHelper udpHelper;
-    private final AccelerometerManager accelManager;  // Can be null
+    private final SensorSourceManager sensorSourceManager;  // Dual source manager
 
     private final SenderStateListener listener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -117,48 +121,55 @@ public class GPSSender {
     // Constructor
     // ═══════════════════════════════════════════════════════
 
+    /**
+     * Constructs GPSSender with unified sensor source manager.
+     *
+     * @param gpsManager GPS location provider
+     * @param networkManager Network connectivity manager
+     * @param resolver Target resolver for UDP destinations
+     * @param udpHelper UDP transmission helper
+     * @param sensorSourceManager Unified sensor manager (INTERNAL/EXTERNAL)
+     * @param listener State change listener
+     */
     public GPSSender(GPSManager gpsManager,
                      NetworkManager networkManager,
                      TargetResolverManager resolver,
                      UDPHelper udpHelper,
-                     AccelerometerManager accelManager,
+                     SensorSourceManager sensorSourceManager,
                      SenderStateListener listener) {
 
         this.gpsManager = gpsManager;
         this.networkManager = networkManager;
         this.resolver = resolver;
         this.udpHelper = udpHelper;
-        this.accelManager = accelManager;
+        this.sensorSourceManager = sensorSourceManager;
         this.listener = listener;
 
         gpsManager.addLocationListener(gpsListener);
         networkManager.addListener(networkListener);
         resolver.addTargetsListener(targetsListener);
 
-        if (accelManager != null) {
+        if (sensorSourceManager != null) {
             // ═══════════════════════════════════════════════════════
-            // Register TWO listeners for different purposes:
-            // 1. accelListener → handles mode switching (ACTIVE ↔ STANDBY)
-            // 2. standbyModeAccelListener → handles send authorization (gateway)
+            // Register unified listener for dual source (INTERNAL/EXTERNAL)
+            // Handles both mode switching and send authorization
             // ═══════════════════════════════════════════════════════
 
-            accelManager.addListener(accelListener);              // Mode switching
-            accelManager.addListener(standbyModeAccelListener);   // Send gateway
+            sensorSourceManager.addListener(sourceListener);
 
-            boolean accelRunning = accelManager.isSensorAvailable() &&
-                    accelManager.isRunning();
+            boolean sensorsAvailable = sensorSourceManager.isSensorAvailable();
 
-            if (accelRunning) {
+            if (sensorsAvailable) {
                 currentMode = OperatingMode.STANDBY;
                 accelAvailable = true;
-                Log.d(TAG, "🟢 GPSSender initialized in STANDBY mode (accel available)");
+                Log.d(TAG, "🟢 GPSSender initialized in STANDBY mode (sensors available)");
             } else {
                 currentMode = OperatingMode.ACTIVE;
-                Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (accel not running)");
+                Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (sensors not available)");
             }
         } else {
             currentMode = OperatingMode.ACTIVE;
-            Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (no accel manager)");
+            Log.d(TAG, "🟡 GPSSender initialized in ACTIVE mode (no sensor manager)");
         }
 
         captureInitialState();
@@ -292,6 +303,10 @@ public class GPSSender {
         }
     }
 
+    // ═══════════════════════════════════════════════════════
+    // Service Listeners
+    // ═══════════════════════════════════════════════════════
+
     private final GPSManager.LocationListenerExternal gpsListener = new GPSManager.LocationListenerExternal() {
         @Override
         public void onNewLocation(android.location.Location location) {}
@@ -373,67 +388,37 @@ public class GPSSender {
         }
     };
 
+    // ═══════════════════════════════════════════════════════
+    // Unified Sensor Source Listener
+    // ═══════════════════════════════════════════════════════
+
     /**
-     * Accelerometer listener for automatic mode switching.
+     * Unified listener for SensorSourceManager (handles both INTERNAL and EXTERNAL).
+     * Combines mode switching and send authorization in a single listener.
      */
-    private final AccelerometerManager.AccelStatisticsListener accelListener =
-            new AccelerometerManager.AccelStatisticsListener() {
+    private final SensorSourceManager.SourceListener sourceListener =
+            new SensorSourceManager.SourceListener() {
                 @Override
-                public void onStatisticsComputed(AccelerometerManager.AccelStatistics statistics) {
-                    if (currentMode == OperatingMode.STANDBY && sending.get()) {
-                        Log.d(TAG, "📊 Accel-driven send completed (STANDBY mode)");
-                    }
-                }
-
-                @Override
-                public void onAvailabilityChanged(boolean available) {
+                public void onAccelDataReceived(AccelerometerManager.AccelStatistics stats,
+                                                SensorSourceManager.SourceType source) {
                     try {
-                        synchronized (stateLock) {
-                            accelAvailable = available;
-                            OperatingMode newMode = available ?
-                                    OperatingMode.STANDBY : OperatingMode.ACTIVE;
-
-                            if (newMode != currentMode) {
-                                Log.i(TAG, String.format(
-                                        "🔄 Mode switch: %s → %s (accel %s)",
-                                        currentMode, newMode,
-                                        available ? "available" : "unavailable"
-                                ));
-
-                                currentMode = newMode;
-
-                                if (sending.get()) {
-                                    stopSending();
-                                    startSending();
-                                }
-                            }
-
-                            if (!available && sending.get()) {
-                                Log.w(TAG, "⚠️ Accelerometer lost - switching to GPS-only");
-                            }
+                        // Log data received
+                        if (currentMode == OperatingMode.STANDBY) {
+                            Log.d(TAG, String.format("📊 Data received from %s source", source));
                         }
-                        notifyState();
-                    } catch (Throwable t) {
-                        Log.e(TAG, "Error in accelerometer callback", t);
-                    }
-                }
-            };
 
-    /**
-     * Accelerometer listener for STANDBY mode event-driven sends.
-     */
-    private final AccelerometerManager.AccelStatisticsListener standbyModeAccelListener =
-            new AccelerometerManager.AccelStatisticsListener() {
-                @Override
-                public void onStatisticsComputed(AccelerometerManager.AccelStatistics statistics) {
-                    try {
+                        // ═══════════════════════════════════════════════════════
+                        // STANDBY mode: Send authorization gateway
+                        // ═══════════════════════════════════════════════════════
                         if (currentMode != OperatingMode.STANDBY) {
                             return;
                         }
+
                         if (!sending.get()) {
                             Log.d(TAG, "⏸️ Accel event ignored: sending not authorized by user");
                             return;
                         }
+
                         if (!gpsAvailable || !networkAvailable || !targetsAvailable) {
                             Log.w(TAG, "⚠️ Accel event ignored: required services not ready");
 
@@ -449,19 +434,55 @@ public class GPSSender {
                             return;
                         }
 
-                        Log.d(TAG, "📊 STANDBY mode: Delegating accel-driven send to UDPHelper");
-                        udpHelper.sendDataTriggeredByAccel(statistics);
+                        Log.d(TAG, String.format("📊 STANDBY mode: Sending data from %s source", source));
+                        udpHelper.sendDataTriggeredByAccel(stats);
 
                     } catch (Throwable t) {
-                        Log.e(TAG, "Error processing accel event in STANDBY mode", t);
+                        Log.e(TAG, "Error processing sensor data", t);
                     }
                 }
 
                 @Override
-                public void onAvailabilityChanged(boolean available) {
-                    // No action needed here
+                public void onSourceAvailabilityChanged(SensorSourceManager.SourceType source,
+                                                        boolean available) {
+                    try {
+                        synchronized (stateLock) {
+                            accelAvailable = available;
+
+                            // ═══════════════════════════════════════════════════════
+                            // Mode switching logic (ACTIVE ↔ STANDBY)
+                            // ═══════════════════════════════════════════════════════
+                            OperatingMode newMode = available ?
+                                    OperatingMode.STANDBY : OperatingMode.ACTIVE;
+
+                            if (newMode != currentMode) {
+                                Log.i(TAG, String.format(
+                                        "🔄 Mode switch: %s → %s (source: %s, available: %s)",
+                                        currentMode, newMode, source, available
+                                ));
+
+                                currentMode = newMode;
+
+                                if (sending.get()) {
+                                    stopSending();
+                                    startSending();
+                                }
+                            }
+
+                            if (!available && sending.get()) {
+                                Log.w(TAG, String.format("⚠️ %s source lost - switching to GPS-only", source));
+                            }
+                        }
+                        notifyState();
+                    } catch (Throwable t) {
+                        Log.e(TAG, "Error in source availability callback", t);
+                    }
                 }
             };
+
+    // ═══════════════════════════════════════════════════════
+    // Lifecycle Management
+    // ═══════════════════════════════════════════════════════
 
     public void dispose() {
         if (disposed) {
@@ -478,12 +499,11 @@ public class GPSSender {
         resolver.removeTargetsListener(targetsListener);
 
         // ═══════════════════════════════════════════════════════
-        // Remove BOTH accelerometer listeners
+        // Remove unified source listener
         // ═══════════════════════════════════════════════════════
-        if (accelManager != null) {
-            accelManager.removeListener(accelListener);              // Mode switching
-            accelManager.removeListener(standbyModeAccelListener);   // Send gateway
-            Log.d(TAG, "Removed accelerometer listeners (mode switching + send gateway)");
+        if (sensorSourceManager != null) {
+            sensorSourceManager.removeListener(sourceListener);
+            Log.d(TAG, "Removed sensor source listener");
         }
 
         scheduler.shutdown();

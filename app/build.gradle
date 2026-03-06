@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.electro.gsms'
+    namespace 'com.electro.dassify_application'
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.electro.gsms"
+        applicationId "com.electro.dassify_application"
         minSdk 23
         targetSdk 35
         versionCode 1
